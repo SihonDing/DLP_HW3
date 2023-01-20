@@ -146,7 +146,7 @@ def run(
     dataset["val"] = echonet.datasets.Echo(root=data_dir, split="val", **kwargs)
 
     # Run training and testing loops
-    with open(os.path.join(output, "log.csv"), "a") as f:
+    with open(os.path.join(output, "log.csv"), "a") as f :
         epoch_resume = 0
         bestLoss = float("inf")
         try:
@@ -256,7 +256,7 @@ def run(
                     # Run segmentation model on blocks of frames one-by-one
                     # The whole concatenated video may be too long to run together
                     y = np.concatenate([model(x[i:(i + batch_size), :, :, :].to(device))["out"].detach().cpu().numpy() for i in range(0, x.shape[0], batch_size)])
-
+                    # x是有多个视频concat到一起的一个长视频，不能直接放进模型中，按照batch_size分段丢尽模型，模型输出再重新concat到一起
                     start = 0
                     x = x.numpy()
                     for (i, (filename, offset)) in enumerate(zip(filenames, length)):
@@ -286,10 +286,10 @@ def run(
                         size = (logit > 0).sum((1, 2))
 
                         # Identify systole frames with peak detection
-                        trim_min = sorted(size)[round(len(size) ** 0.05)]
+                        trim_min = sorted(size)[round(len(size) ** 0.05)]   # size是长度为frame数的一维数组，每个元素代表对应帧的分割体积， len(size)也即该视频对应的frame数
                         trim_max = sorted(size)[round(len(size) ** 0.95)]
                         trim_range = trim_max - trim_min
-                        systole = set(scipy.signal.find_peaks(-size, distance=20, prominence=(0.50 * trim_range))[0])
+                        systole = set(scipy.signal.find_peaks(-size, distance=20, prominence=(0.50 * trim_range))[0])   # 找到size最小值的峰值对应的横坐标范围
 
                         # Write sizes and frames to file
                         for (frame, s) in enumerate(size):
@@ -297,8 +297,8 @@ def run(
 
                         # Plot sizes
                         fig = plt.figure(figsize=(size.shape[0] / 50 * 1.5, 3))
-                        plt.scatter(np.arange(size.shape[0]) / 50, size, s=1)
-                        ylim = plt.ylim()
+                        plt.scatter(np.arange(size.shape[0]) / 50, size, s=1)   # 画散点图， 每一个点代表每一帧的size值，横坐标是frame数/50
+                        ylim = plt.ylim()   # 获取当前y轴范围
                         for s in systole:
                             plt.plot(np.array([s, s]) / 50, ylim, linewidth=1)
                         plt.ylim(ylim)
@@ -391,6 +391,9 @@ def run_epoch(model, dataloader, train, optim, device):
     with torch.set_grad_enabled(train):
         with tqdm.tqdm(total=len(dataloader)) as pbar:
             for (_, (large_frame, small_frame, large_trace, small_trace)) in dataloader:
+                # large_trace是一个三维数组，shape=(batch_size, frame_height, frame_width)，就是根据坐标画出的mask多边形
+                # large_frame.shape = (3, 1, frame_height, frame_width)
+
                 # Count number of pixels in/out of human segmentation
                 pos += (large_trace == 1).sum().item()
                 pos += (small_trace == 1).sum().item()
@@ -398,8 +401,8 @@ def run_epoch(model, dataloader, train, optim, device):
                 neg += (small_trace == 0).sum().item()
 
                 # Count number of pixels in/out of computer segmentation
-                # large_trace是一个三维数组，shape=(3, frame_height, frame_width)
-                # 沿axis=0加和，即沿channel加和
+                # 沿axis=0加和，即沿batch_size加和
+                # pos_pix是一个二维数组
                 pos_pix += (large_trace == 1).sum(0).to("cpu").detach().numpy()
                 pos_pix += (small_trace == 1).sum(0).to("cpu").detach().numpy()
                 neg_pix += (large_trace == 0).sum(0).to("cpu").detach().numpy()
@@ -409,13 +412,13 @@ def run_epoch(model, dataloader, train, optim, device):
                 large_frame = large_frame.to(device)
                 large_trace = large_trace.to(device)
                 y_large = model(large_frame)["out"]
-                loss_large = torch.nn.functional.binary_cross_entropy_with_logits(y_large[:, 0, :, :], large_trace, reduction="sum")
+                loss_large = torch.nn.functional.binary_cross_entropy_with_logits(y_large[:, 0, :, :], large_trace, reduction="sum")    # reduction参数取"sum"代表返回一个batch所有元素loss的加和
                 # Compute pixel intersection and union between human and computer segmentations
                 # 逻辑与 代表人类分割与计算机分割的交集（的像素个数）
                 large_inter += np.logical_and(y_large[:, 0, :, :].detach().cpu().numpy() > 0., large_trace[:, :, :].detach().cpu().numpy() > 0.).sum()
                 # 逻辑或 代表人类分割与计算机分割的联合（的像素个数）
-                large_union += np.logical_or(y_large[:, 0, :, :].detach().cpu().numpy() > 0., large_trace[:, :, :].detach().cpu().numpy() > 0.).sum()
-                large_inter_list.extend(np.logical_and(y_large[:, 0, :, :].detach().cpu().numpy() > 0., large_trace[:, :, :].detach().cpu().numpy() > 0.).sum((1, 2)))
+                large_union += np.logical_or(y_large[:, 0, :, :].detach().cpu().numpy() > 0., large_trace[:, :, :].detach().cpu().numpy() > 0.).sum()   #.sum()是所有元素加和，得到一个int值
+                large_inter_list.extend(np.logical_and(y_large[:, 0, :, :].detach().cpu().numpy() > 0., large_trace[:, :, :].detach().cpu().numpy() > 0.).sum((1, 2)))  # .sum((1, 2))是对三维数组每一帧分别加和，得到一个一维数组
                 large_union_list.extend(np.logical_or(y_large[:, 0, :, :].detach().cpu().numpy() > 0., large_trace[:, :, :].detach().cpu().numpy() > 0.).sum((1, 2)))
 
                 # Run prediction for systolic frames and compute loss
@@ -438,7 +441,7 @@ def run_epoch(model, dataloader, train, optim, device):
 
                 # Accumulate losses and compute baselines
                 total += loss.item()
-                n += large_trace.size(0)    # 通道数
+                n += large_trace.size(0)    # batch_size数
                 p = pos / (pos + neg)
                 p_pix = (pos_pix + 1) / (pos_pix + neg_pix + 2)
 
@@ -451,8 +454,8 @@ def run_epoch(model, dataloader, train, optim, device):
     small_inter_list = np.array(small_inter_list)
     small_union_list = np.array(small_union_list)
 
-    return (total / n / 112 / 112,
-            large_inter_list,
+    return (total / n / 112 / 112,  # 一个epoch, 训练集中所有数据(batch_size)的loss平均值
+            large_inter_list,   # 列表（每个batch对应一个元素）
             large_union_list,
             small_inter_list,
             small_union_list,
@@ -490,7 +493,7 @@ def _video_collate_fn(x):
 
     # This contatenates the videos along the the frames dimension (basically
     # playing the videos one after another). The frames dimension is then
-    # moved to be first.
+    # moved to be first.'
     # Resulting shape is (total frames, channels=3, height, width)
     video = torch.as_tensor(np.swapaxes(np.concatenate(video, 1), 0, 1))
 
