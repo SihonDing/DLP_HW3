@@ -254,8 +254,8 @@ def run(
                 lower = min(y.min(), yhat.min())
                 upper = max(y.max(), yhat.max())
                 plt.scatter(y, yhat, color="k", s=1, edgecolor=None, zorder=2)
-                plt.plot([0, 100], [0, 100], linewidth=1, zorder=3)
-                plt.axis([lower - 3, upper + 3, lower - 3, upper + 3])
+                plt.plot([0, 100], [0, 100], linewidth=1, zorder=3)     #画线
+                plt.axis([lower - 3, upper + 3, lower - 3, upper + 3])      # plt.axis([a, b, c, d]) 设置x轴的范围为[a, b]，y轴的范围为[c, d]
                 plt.gca().set_aspect("equal", "box")
                 plt.xlabel("Actual EF (%)")
                 plt.ylabel("Predicted EF (%)")
@@ -319,12 +319,12 @@ def run_epoch(model, dataloader, train, optim, device, save_all=False, block_siz
                 X = X.to(device)
                 outcome = outcome.to(device)
 
-                average = (len(X.shape) == 6)
+                average = (len(X.shape) == 6)   # len(X.shape) == 6 即X.shape = (batch_size, n_clips, channel, frames, height, width), 对应clips = 'all'的情形
                 if average:
                     batch, n_clips, c, f, h, w = X.shape
                     X = X.view(-1, c, f, h, w)
 
-                s1 += outcome.sum()
+                s1 += outcome.sum()     # s1是一个batch中所有标签（EF）的总和
                 s2 += (outcome ** 2).sum()
 
                 if block_size is None:
@@ -359,3 +359,16 @@ def run_epoch(model, dataloader, train, optim, device, save_all=False, block_siz
     y = np.concatenate(y)
 
     return total / n, yhat, y
+
+# 改进部分，三种损失函数
+def logcosh_loss(y, y_hat):
+    loss = torch.log(torch.cosh(y - y_hat))
+    return torch.mean(loss)
+
+def mape_loss(y, y_hat):
+    loss = torch.abs((y - y_hat) / y)
+    return torch.mean(loss)
+
+def smape_loss(y, y_hat):
+    loss = torch.abs((y - y_hat) / ((y + y_hat) / 2))
+    return torch.mean(loss)
